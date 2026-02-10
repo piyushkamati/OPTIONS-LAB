@@ -1,4 +1,4 @@
-const API = "http://localhost:8000";
+const API = "https://option-analytics.onrender.com";
 
 export async function getExpiries(ticker: string) {
   const r = await fetch(`${API}/tickers/${ticker}/expiries`);
