@@ -1,29 +1,69 @@
-import pandas as pd
-import yfinance as yf
+import requests
+import time
+import logging
 
-def get_spot(ticker: str) -> float:
-    t = yf.Ticker(ticker)
-    hist = t.history(period="5d")
-    if hist.empty:
-        raise ValueError("No price history")
-    return float(hist["Close"].iloc[-1])
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 
-def get_expiries(ticker: str) -> list[str]:
-    return list(yf.Ticker(ticker).options)
+# Caching dictionary with TTL (time to live)
+cache = {}
+cache_ttl = 300 # 5 minutes
 
-def get_chain(ticker: str, expiry: str) -> pd.DataFrame:
-    t = yf.Ticker(ticker)
-    oc = t.option_chain(expiry)
-    calls = oc.calls.copy()
-    puts = oc.puts.copy()
-    calls["cp"] = "C"
-    puts["cp"] = "P"
-    df = pd.concat([calls, puts], ignore_index=True)
 
-    # mid price fallback logic
-    df["mid"] = (df["bid"].fillna(0) + df["ask"].fillna(0)) / 2.0
-    df.loc[df["mid"] <= 0, "mid"] = df["lastPrice"].where(df["lastPrice"] > 0, df["mid"])
+def set_cache(key, value):
+    cache[key] = (value, time.time())
 
-    # Keep useful columns
-    keep = ["contractSymbol","cp","strike","lastPrice","bid","ask","mid","volume","openInterest","impliedVolatility"]
-    return df[keep].sort_values(["cp","strike"]).reset_index(drop=True)
+
+def get_cache(key):
+    if key in cache:
+        value, timestamp = cache[key]
+        if time.time() - timestamp < cache_ttl:
+            return value
+        else:
+            del cache[key]  # Remove expired cache
+    return None
+
+
+def validate_ticker(ticker):
+    # Basic ticker validation logic (can be expanded)
+    return len(ticker) > 0 and ticker.isalnum()
+
+
+def search_tickers(ticker):
+    if not validate_ticker(ticker):
+        logging.error('Invalid ticker format.')
+        return []
+    
+    # Simulated search functionality (replace with actual search)
+    try:
+        response = requests.get(f'https://api.example.com/tickers/search?q={ticker}')
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        logging.error(f'Error searching tickers: {e}')
+        return []
+
+
+def get_expiries_detailed(ticker):
+    data = get_cache(ticker)
+    if data:
+        return data
+    try:
+        response = requests.get(f'https://api.example.com/options/expiries?ticker={ticker}')
+        response.raise_for_status()
+        data = response.json()
+        set_cache(ticker, data)
+        return data
+    except requests.exceptions.RequestException as e:
+        logging.error(f'Error getting expiries: {e}')
+        return None
+
+
+# Example of how to use the functions
+if __name__ == '__main__':
+    ticker = 'AAPL'
+    expiries = get_expiries_detailed(ticker)
+    if expiries:
+        logging.info(f'Expiries for {ticker}: {expiries}')
+    else:
+        logging.info(f'No data found for {ticker}.')
